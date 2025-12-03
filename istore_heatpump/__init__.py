@@ -29,14 +29,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     }
 
     # Load sensor + switch platforms
-    await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch", "binary_sensor", "number"])
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor", "switch", "binary_sensor"])
 
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload iStore."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor", "switch", "binary_sensor", "number"])
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, ["sensor", "switch", "binary_sensor"])
 
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)

@@ -11,17 +11,19 @@ TARGET_SET = "WH.TargetTemp"
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    data = hass.data[DOMAIN][entry.entry_id]
-    coordinator = data["coordinator"]
-    api = data["api"]
+    return  # disable all number entities (TargetTemp, Min, Max)
+    
+    # data = hass.data[DOMAIN][entry.entry_id]
+    # coordinator = data["coordinator"]
+    # api = data["api"]
 
-    entities = [
-        IStoreTargetTemperature(coordinator, api),
-        IStoreTargetMin(coordinator, api),
-        IStoreTargetMax(coordinator, api)
-    ]
+    # entities = [
+    #     IStoreTargetTemperature(coordinator, api),
+    #     IStoreTargetMin(coordinator, api),
+    #     IStoreTargetMax(coordinator, api)
+    # ]
 
-    async_add_entities(entities)
+    # async_add_entities(entities)
 
 
 # -------------------------------------------------------

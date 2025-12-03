@@ -125,63 +125,63 @@ class iStoreApi:
 
 
 
-    async def set_target_temperature(self, value):
-        url = "https://home.istore.net.au/hossain-bff/connect/v1.0/device/control"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
-        payload = [
-            {
-                "assetId": self.mdm_id,
-                "controlPointId": "WH.TargetTemp",
-                "value": value
-            }
-        ]
+    # async def set_target_temperature(self, value):
+    #     url = "https://home.istore.net.au/hossain-bff/connect/v1.0/device/control"
+    #     headers = {
+    #         "Authorization": f"Bearer {self.access_token}",
+    #         "Content-Type": "application/json",
+    #     }
+    #     payload = [
+    #         {
+    #             "assetId": self.mdm_id,
+    #             "controlPointId": "WH.TargetTemp",
+    #             "value": value
+    #         }
+    #     ]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                return await resp.json()
-
-
-
-    async def set_target_min(self, value):
-        url = "https://home.istore.net.au/hossain-bff/connect/v1.0/device/control"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
-        payload = [
-            {
-                "assetId": self.mdm_id,
-                "controlPointId": "WH.TargetTempMin",
-                "value": value
-            }
-        ]
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                return await resp.json()
+    #     async with aiohttp.ClientSession() as session:
+    #         async with session.post(url, headers=headers, json=payload) as resp:
+    #             return await resp.json()
 
 
 
-    async def set_target_max(self, value):
-        url = "https://home.istore.net.au/hossain-bff/connect/v1.0/device/control"
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
-        payload = [
-            {
-                "assetId": self.mdm_id,
-                "controlPointId": "WH.TargetTempMax",
-                "value": value
-            }
-        ]
+    # async def set_target_min(self, value):
+    #     url = "https://home.istore.net.au/hossain-bff/connect/v1.0/device/control"
+    #     headers = {
+    #         "Authorization": f"Bearer {self.access_token}",
+    #         "Content-Type": "application/json",
+    #     }
+    #     payload = [
+    #         {
+    #             "assetId": self.mdm_id,
+    #             "controlPointId": "WH.TargetTempMin",
+    #             "value": value
+    #         }
+    #     ]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                return await resp.json()
+    #     async with aiohttp.ClientSession() as session:
+    #         async with session.post(url, headers=headers, json=payload) as resp:
+    #             return await resp.json()
+
+
+
+    # async def set_target_max(self, value):
+    #     url = "https://home.istore.net.au/hossain-bff/connect/v1.0/device/control"
+    #     headers = {
+    #         "Authorization": f"Bearer {self.access_token}",
+    #         "Content-Type": "application/json",
+    #     }
+    #     payload = [
+    #         {
+    #             "assetId": self.mdm_id,
+    #             "controlPointId": "WH.TargetTempMax",
+    #             "value": value
+    #         }
+    #     ]
+
+    #     async with aiohttp.ClientSession() as session:
+    #         async with session.post(url, headers=headers, json=payload) as resp:
+    #             return await resp.json()
 
 
 
