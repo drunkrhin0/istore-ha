@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install ruff cryptography pytest pytest-asyncio aiohttp voluptuous
+
+      - name: Dependency audit
+        run: |
+          pip install pip-audit
+          pip-audit
+
+      - name: Lint
+        run: ruff check custom_components/istore_heatpump/
+
+      - name: Syntax check
+        run: |
+          for f in custom_components/istore_heatpump/*.py; do
+            python -m py_compile "$f" || exit 1
+          done
+          echo "All Python files compile cleanly."
+
+      - name: Unit tests
+        run: pytest tests/ -v
+
+      - name: Validate manifest
+        run: |
+          python -c "
+          import json, sys
+          with open('custom_components/istore_heatpump/manifest.json') as f:
+              m = json.load(f)
+          required = ['domain', 'name', 'version', 'iot_class', 'config_flow']
+          for key in required:
+              if key not in m:
+                  print(f'manifest.json missing required key: {key}')
+                  sys.exit(1)
+          print('manifest.json valid')
+          "
+
+      - name: Validate hacs.json
+        run: |
+          python -c "
+          import json, sys
+          with open('hacs.json') as f:
+              h = json.load(f)
+          if 'name' not in h or 'homeassistant' not in h:
+              print('hacs.json missing required keys')
+              sys.exit(1)
+          print('hacs.json valid')
+          "
+
+      - name: Check for common issues
+        run: |
+          grep -rn '"istore_heatpump"' custom_components/istore_heatpump/ --include='*.py' | \
+            grep -v 'const.py' | grep -v '__init__.py' && \
+            echo "WARNING: Hardcoded domain string found" || true
+
+          if [ -d "istore_heatpump" ]; then
+            echo "ERROR: Old istore_heatpump/ directory still exists"
+            exit 1
+          fi
+          echo "Structure check passed."

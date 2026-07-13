@@ -1,1 +1,0 @@
-DOMAIN = "istore_heatpump"

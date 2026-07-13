@@ -1,0 +1,7 @@
+# OpenCode working directory
+.opencode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
