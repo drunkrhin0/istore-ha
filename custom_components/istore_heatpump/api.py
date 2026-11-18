@@ -19,6 +19,10 @@ _LOGGER = logging.getLogger(__name__)
 # 0, 200, and 10000 all indicate success depending on the endpoint.
 _VALID_CODES = {0, 200, 10000}
 
+# iStore reports an expired or invalid session as HTTP 200 with one of these body
+# codes (body: {"code": 30000, "msg": "please sign in"}), not as HTTP 401.
+_AUTH_EXPIRED_CODES = {30000}
+
 # 30-second total timeout prevents hung connections from stalling the event loop
 _DEFAULT_TIMEOUT = ClientTimeout(total=30, connect=10)
 
@@ -73,6 +77,13 @@ class IStoreAuthError(Exception):
 
 class IStoreApiError(Exception):
     """iStore API returned an error response."""
+
+
+def _auth_expired(status: int, body) -> bool:
+    """Return True if a response means the access token is expired or invalid."""
+    if status == 401:
+        return True
+    return isinstance(body, dict) and body.get("code") in _AUTH_EXPIRED_CODES
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -307,12 +318,38 @@ class iStoreApi:
         if self._session and not self._session.closed:
             await self._session.close()
 
-    async def _handle_401(self, headers):
-        """Re-authenticate and refresh the Authorization header."""
-        _LOGGER.debug("iStore: re-authenticating...")
-        await self.re_authenticate()
-        headers["Authorization"] = f"Bearer {self.access_token}"
-        _LOGGER.debug("iStore: re-authentication successful")
+    async def _post(self, url, *, content_type=None, data=None, json=None):
+        """POST with the bearer token and return (status, body).
+
+        If the session has expired (HTTP 401, or HTTP 200 with an auth-expired
+        body code) the full login runs once and the request is repeated.
+        """
+        session = await self._get_session()
+        for attempt in (0, 1):
+            token = self.access_token
+            headers = {"Authorization": f"Bearer {token}"}
+            if content_type:
+                headers["Content-Type"] = content_type
+            kwargs = {"headers": headers}
+            if data is not None:
+                kwargs["data"] = data
+            if json is not None:
+                kwargs["json"] = json
+
+            async with session.post(url, **kwargs) as resp:
+                status = resp.status
+                try:
+                    body = await resp.json(content_type=None)
+                except (aiohttp.ContentTypeError, ValueError):
+                    body = None
+
+            if attempt == 0 and _auth_expired(status, body):
+                _LOGGER.debug("iStore: session expired (HTTP %s), re-authenticating", status)
+                # Another request may already have refreshed the token.
+                if self.access_token == token:
+                    await self.re_authenticate()
+                continue
+            return status, body
 
     async def re_authenticate(self):
         """Re-run the full auth flow and refresh stored credentials."""
@@ -348,26 +385,14 @@ class iStoreApi:
             "attributes": "name,mdmType",
             "locale": "en-US",
         })
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-
-        session = await self._get_session()
-        async with session.post(url, headers=headers, data=payload) as resp:
-            if resp.status == 401:
-                await self._handle_401(headers)
-                async with session.post(url, headers=headers, data=payload) as retry:
-                    if retry.status != 200:
-                        raise IStoreApiError(
-                            f"iStore hierarchy API failed after re-auth: {retry.status}"
-                        )
-                    return await retry.json(content_type=None)
-
-            if resp.status != 200:
-                raise IStoreApiError(f"iStore hierarchy API failed: {resp.status}")
-
-            return await resp.json(content_type=None)
+        status, body = await self._post(
+            url,
+            content_type="application/x-www-form-urlencoded",
+            data=payload,
+        )
+        if status != 200:
+            raise IStoreApiError(f"iStore hierarchy API failed: {status}")
+        return body
 
     # -------------------------------------------------------------------------
     # Device attributes
@@ -383,26 +408,14 @@ class iStoreApi:
             "mdmIds": self.mdm_id,
             "locale": "en-US",
         })
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/x-www-form-urlencoded",
-        }
-
-        session = await self._get_session()
-        async with session.post(url, headers=headers, data=payload) as resp:
-            if resp.status == 401:
-                await self._handle_401(headers)
-                async with session.post(url, headers=headers, data=payload) as retry:
-                    if retry.status != 200:
-                        raise IStoreApiError(
-                            f"iStore attributes API failed after re-auth: {retry.status}"
-                        )
-                    return await retry.json(content_type=None)
-
-            if resp.status != 200:
-                raise IStoreApiError(f"iStore attributes API failed: {resp.status}")
-
-            return await resp.json(content_type=None)
+        status, body = await self._post(
+            url,
+            content_type="application/x-www-form-urlencoded",
+            data=payload,
+        )
+        if status != 200:
+            raise IStoreApiError(f"iStore attributes API failed: {status}")
+        return body
 
     # -------------------------------------------------------------------------
     # Measurements
@@ -415,29 +428,18 @@ class iStoreApi:
         payload = urlencode(
             {"mdmIds": self.mdm_id, "pointIds": ",".join(_MEASUREMENT_POINTS)}
         )
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        }
-
-        session = await self._get_session()
-        async with session.post(url, headers=headers, data=payload) as resp:
-            if resp.status == 401:
-                await self._handle_401(headers)
-                async with session.post(url, headers=headers, data=payload) as retry:
-                    if retry.status != 200:
-                        raise IStoreApiError(
-                            f"iStore measurement API returned {retry.status} after re-auth"
-                        )
-                    return await retry.json(content_type=None)
-
-            if resp.status != 200:
-                _LOGGER.error("iStore measurement API returned %s", resp.status)
-                raise IStoreApiError(
-                    f"iStore measurement API returned HTTP {resp.status}"
-                )
-
-            return await resp.json(content_type=None)
+        status, body = await self._post(
+            url,
+            content_type="application/x-www-form-urlencoded; charset=UTF-8",
+            data=payload,
+        )
+        if status != 200:
+            _LOGGER.error("iStore measurement API returned %s", status)
+            raise IStoreApiError(f"iStore measurement API returned HTTP {status}")
+        if not isinstance(body, dict) or "data" not in body:
+            code = body.get("code") if isinstance(body, dict) else None
+            raise IStoreApiError(f"iStore measurement API returned no data (code={code})")
+        return body
 
     # -------------------------------------------------------------------------
     # Control (On/Off/Booster)
@@ -454,30 +456,14 @@ class iStoreApi:
         payload = [
             {"assetId": self.mdm_id, "controlPointId": control_point, "value": value}
         ]
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
 
         _LOGGER.debug("iStore control request: %s", control_point)
-        session = await self._get_session()
-        async with session.post(url, headers=headers, json=payload) as resp:
-            if resp.status == 401:
-                await self._handle_401(headers)
-                async with session.post(
-                    url, headers=headers, json=payload
-                ) as retry:
-                    res_json = await retry.json(content_type=None)
-                    _LOGGER.debug("iStore control retry code: %s", res_json.get("code"))
-                    if res_json.get("code") not in _VALID_CODES:
-                        raise IStoreApiError(f"Control failed: {res_json}")
-                    return res_json
-
-            res_json = await resp.json(content_type=None)
-            _LOGGER.debug("iStore control response code: %s", res_json.get("code"))
-            if res_json.get("code") not in _VALID_CODES:
-                raise IStoreApiError(f"Control failed: {res_json}")
-            return res_json
+        _, res_json = await self._post(url, json=payload)
+        code = res_json.get("code") if isinstance(res_json, dict) else None
+        _LOGGER.debug("iStore control response code: %s", code)
+        if code not in _VALID_CODES:
+            raise IStoreApiError(f"Control failed: {res_json}")
+        return res_json
 
     # -------------------------------------------------------------------------
     # Timer batch control
@@ -488,30 +474,14 @@ class iStoreApi:
             {"assetId": self.mdm_id, "controlPointId": point_id, "value": value}
             for point_id, value in timer_settings.items()
         ]
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
 
         _LOGGER.debug("iStore batch timer request: %d points", len(payload))
-        session = await self._get_session()
-        async with session.post(url, headers=headers, json=payload) as resp:
-            if resp.status == 401:
-                await self._handle_401(headers)
-                async with session.post(
-                    url, headers=headers, json=payload
-                ) as retry:
-                    res_json = await retry.json(content_type=None)
-                    _LOGGER.debug("iStore batch timer retry code: %s", res_json.get("code"))
-                    if res_json.get("code") not in _VALID_CODES:
-                        raise IStoreApiError(f"Batch timer update failed: {res_json}")
-                    return res_json
-
-            res_json = await resp.json(content_type=None)
-            _LOGGER.debug("iStore batch timer response code: %s", res_json.get("code"))
-            if res_json.get("code") not in _VALID_CODES:
-                raise IStoreApiError(f"Batch timer update failed: {res_json}")
-            return res_json
+        _, res_json = await self._post(url, json=payload)
+        code = res_json.get("code") if isinstance(res_json, dict) else None
+        _LOGGER.debug("iStore batch timer response code: %s", code)
+        if code not in _VALID_CODES:
+            raise IStoreApiError(f"Batch timer update failed: {res_json}")
+        return res_json
 
     async def async_write_timer_settings(self, coordinator, updates: dict):
         """Read all timer points from coordinator, apply updates, write as batch."""
@@ -544,35 +514,11 @@ class iStoreApi:
     async def update_asset_name(self, name):
         url = "https://home.istore.net.au/hossain-bff/monitor/v1.0/asset/update"
         payload = {"assetId": self.mdm_id, "name": name}
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json",
-        }
 
-        session = await self._get_session()
-        async with session.post(url, headers=headers, json=payload) as resp:
-            if resp.status == 401:
-                await self._handle_401(headers)
-                async with session.post(
-                    url, headers=headers, json=payload
-                ) as retry:
-                    if retry.status != 200:
-                        raise IStoreApiError(
-                            f"Failed to update asset name after re-auth: {retry.status}"
-                        )
-                    res_json = await retry.json(content_type=None)
-                    if res_json.get("code") not in _VALID_CODES:
-                        raise IStoreApiError(
-                            f"Update failed with code: {res_json.get('code')}"
-                        )
-                    return True
-
-            if resp.status != 200:
-                raise IStoreApiError(f"Failed to update asset name: {resp.status}")
-
-            res_json = await resp.json(content_type=None)
-            if res_json.get("code") not in _VALID_CODES:
-                raise IStoreApiError(
-                    f"Update failed with code: {res_json.get('code')}"
-                )
-            return True
+        status, res_json = await self._post(url, json=payload)
+        if status != 200:
+            raise IStoreApiError(f"Failed to update asset name: {status}")
+        code = res_json.get("code") if isinstance(res_json, dict) else None
+        if code not in _VALID_CODES:
+            raise IStoreApiError(f"Update failed with code: {code}")
+        return True
