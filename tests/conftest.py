@@ -46,7 +46,12 @@ class _MockSelectEntity:
 
 # DataUpdateCoordinator mock
 class _MockDataUpdateCoordinator:
-    pass
+    def __init__(self, *args, **kwargs):
+        self.data = None
+
+
+class _UpdateFailed(Exception):
+    """Stand-in for homeassistant.helpers.update_coordinator.UpdateFailed."""
 
 
 # DeviceInfo mock (captures constructor args for assertions)
@@ -87,6 +92,7 @@ _mock_ha_components_select.SelectEntity = _MockSelectEntity
 _mock_ha_helpers_update_coordinator = MagicMock()
 _mock_ha_helpers_update_coordinator.CoordinatorEntity = _MockCoordinatorEntity
 _mock_ha_helpers_update_coordinator.DataUpdateCoordinator = _MockDataUpdateCoordinator
+_mock_ha_helpers_update_coordinator.UpdateFailed = _UpdateFailed
 
 _mock_ha_helpers_device_registry = MagicMock()
 _mock_ha_helpers_device_registry.DeviceInfo = _MockDeviceInfo

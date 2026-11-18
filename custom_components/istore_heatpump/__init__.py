@@ -59,6 +59,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     api = iStoreApi(username, password, access_token, parent_id, mdm_id, hass)
 
+    # The saved token may have expired while Home Assistant was down, so log in
+    # fresh on every setup. If the login fails (cloud or network down), fall back
+    # to the saved token and let the first refresh decide.
+    try:
+        await api.re_authenticate()
+    except Exception as e:
+        _LOGGER.warning("iStore login at setup failed, trying the saved token: %s", e)
+
     # Fetch device details for DeviceInfo
     try:
         api.arch_data = await api.get_architecture()
